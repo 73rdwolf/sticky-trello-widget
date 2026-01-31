@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Sticky Trello Wallpaper</title>
+    <style>
+        :root {
+            --bg: rgba(20, 20, 20, 0.7);
+            --text: #ffffff;
+            --accent: #0079bf;
+            --accent-hover: #026aa7;
+            --danger: #eb5a46;
+            --input-bg: #333;
+            --rounded: 12px;
+            --toolbar-bg: rgba(40, 40, 40, 0.9);
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            background: transparent;
+            color: var(--text);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        #onboarding {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+            background: var(--bg);
+            border-radius: var(--rounded);
+            margin: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #trello-webview {
+            display: none;
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: transparent;
+        }
+
+        /* Toolbar */
+        #toolbar {
+            position: absolute;
+            top: 60px;
+            /* Below drag region */
+            left: 20px;
+            display: none;
+            background: var(--toolbar-bg);
+            padding: 8px;
+            border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: opacity 0.3s;
+            opacity: 0.2;
+        }
+
+        #toolbar:hover {
+            opacity: 1;
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: none;
+            color: white;
+            padding: 5px 12px;
+            margin: 0 2px;
+            cursor: pointer;
+            border-radius: 15px;
+            font-size: 13px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .nav-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .nav-btn.switch {
+            background: var(--accent);
+        }
+
+        .nav-btn.switch:hover {
+            background: var(--accent-hover);
+        }
+
+        .drag-region {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 50px;
+            -webkit-app-region: drag;
+            z-index: 1000;
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 28px;
+            color: #888;
+            cursor: pointer;
+            z-index: 1001;
+            transition: color 0.2s;
+            -webkit-app-region: no-drag;
+        }
+
+        .close-btn:hover {
+            color: #fff;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        p {
+            color: #ccc;
+            margin-bottom: 25px;
+            font-size: 15px;
+            line-height: 1.5;
+        }
+
+        input {
+            width: 100%;
+            padding: 16px;
+            margin-bottom: 20px;
+            border: 2px solid transparent;
+            border-radius: 10px;
+            background: var(--input-bg);
+            color: white;
+            box-sizing: border-box;
+            outline: none;
+            font-size: 16px;
+        }
+
+        input:focus {
+            border-color: var(--accent);
+        }
+
+        button.start-btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 10px;
+            background: var(--accent);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        button.start-btn:hover {
+            background: var(--accent-hover);
+        }
+
+        #widget-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="widget-container">
+        <div class="drag-region"></div>
+        <div class="close-btn" id="close-btn">×</div>
+
+        <!-- Float Toolbar for Navigation -->
+        <div id="toolbar">
+            <button class="nav-btn" onclick="goBack()">← Back</button>
+            <button class="nav-btn" onclick="reload()">↻ Refresh</button>
+            <button class="nav-btn" onclick="goHome()">🏠 Home</button>
+            <button class="nav-btn switch" onclick="switchBoard()">⇄ Switch Board</button>
+        </div>
+
+        <div id="onboarding">
+            <div class="container">
+                <h1>Trello Wallpaper</h1>
+                <p>Enter your Trello board URL. <br>To log in or create boards, just use the Trello interface after
+                    connecting.</p>
+                <input type="text" id="url-input" placeholder="https://trello.com/b/...">
+                <button class="start-btn" id="start-btn">Connect & Stick</button>
+            </div>
+        </div>
+
+        <webview id="trello-webview" partition="persist:trello" allowpopups></webview>
+    </div>
+
+    <script>
+        const onboarding = document.getElementById('onboarding');
+        const webview = document.getElementById('trello-webview');
+        const toolbar = document.getElementById('toolbar');
+        const urlInput = document.getElementById('url-input');
+        const startBtn = document.getElementById('start-btn');
+        const closeBtn = document.getElementById('close-btn');
+
+        async function init() {
+            const config = await window.electronAPI.getConfig();
+            if (config.trelloUrl) {
+                loadBoard(config.trelloUrl);
+            }
+        }
+
+        function loadBoard(url) {
+            onboarding.style.display = 'none';
+            webview.style.display = 'flex';
+            toolbar.style.display = 'flex';
+            webview.src = url;
+
+            webview.addEventListener('dom-ready', () => {
+                // CSS to remove board background
+                const css = `
+                    /* Remove background from ALL containers - nuclear approach */
+                    html, body, #trello-root, #surface, #board, #content,
+                    #chrome-container, main, .board-wrapper, .board-main-content,
+                    .board-canvas, .u-fancy-scrollbar, .board-content,
+                    [class*="board-background"], [class*="BoardBackground"],
+                    [class*="board-wrapper"], [class*="BoardWrapper"],
+                    [data-testid="board-background"], [data-testid="board-wrapper"],
+                    [data-testid="board-content"], [data-testid="board"],
+                    div > div, section, article {
+                        background: transparent !important;
+                        background-color: transparent !important;
+                        background-image: none !important;
+                    }
+                    
+                    /* Hide the top Atlassian header only */
+                    #header, [data-testid="atlassian-navigation"], .atlassian-navigation {
+                        display: none !important;
+                    }
+                `;
+                webview.insertCSS(css);
+
+                // JavaScript to remove inline background styles
+                webview.executeJavaScript(`
+                    function removeBackgrounds() {
+                        // Get all elements
+                        const allElements = document.querySelectorAll('*');
+                        allElements.forEach(el => {
+                            const style = el.style;
+                            const computed = window.getComputedStyle(el);
+                            
+                            // Skip list and card elements
+                            const classes = el.className || '';
+                            if (typeof classes === 'string' && 
+                                (classes.includes('list-card') || 
+                                 classes.includes('list-wrapper') ||
+                                 classes.includes('list-header'))) {
+                                return;
+                            }
+                            
+                            // Remove background if it looks like a board background
+                            if (style.backgroundColor || style.backgroundImage) {
+                                // Check if it's a container-like element
+                                const tag = el.tagName.toLowerCase();
+                                if (['div', 'main', 'section', 'article', 'body', 'html'].includes(tag)) {
+                                    style.setProperty('background', 'transparent', 'important');
+                                    style.setProperty('background-color', 'transparent', 'important');
+                                    style.setProperty('background-image', 'none', 'important');
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Run immediately and after a delay (for dynamic content)
+                    removeBackgrounds();
+                    setTimeout(removeBackgrounds, 1000);
+                    setTimeout(removeBackgrounds, 3000);
+                    
+                    // Also observe for changes
+                    const observer = new MutationObserver(removeBackgrounds);
+                    observer.observe(document.body, { childList: true, subtree: true });
+                `);
+            });
+
+
+
+
+
+
+
+        }
+
+        function goBack() { if (webview.canGoBack()) webview.goBack(); }
+        function reload() { webview.reload(); }
+        function goHome() { webview.src = 'https://trello.com'; } // Goes to Trello dashboard/login
+        function switchBoard() {
+            onboarding.style.display = 'flex';
+            webview.style.display = 'none';
+            toolbar.style.display = 'none';
+        }
+
+        startBtn.onclick = () => {
+            const url = urlInput.value.trim();
+            if (url.startsWith('http')) {
+                window.electronAPI.saveUrl(url);
+                loadBoard(url);
+            }
+        };
+
+        closeBtn.onclick = () => window.electronAPI.closeApp();
+        init();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,13 @@
+{
+    "name": "sticky-trello-widget",
+    "version": "1.0.0",
+    "description": "A sticky Trello widget for Windows",
+    "main": "main.js",
+    "scripts": {
+        "start": ".\\node_modules\\electron\\dist\\electron.exe ."
+    },
+    "dependencies": {},
+    "devDependencies": {
+        "electron": "^33.0.0"
+    }
+}
