@@ -31,6 +31,11 @@ function saveSettings(settings) {
     try {
         const filePath = getSettingsPath();
         const current = loadSettings();
+        // Handle legacy 'url' key if it exists
+        if (current.url && !current.trelloUrl) {
+            current.trelloUrl = current.url;
+            delete current.url;
+        }
         const updated = { ...current, ...settings };
         fs.writeFileSync(filePath, JSON.stringify(updated, null, 2));
     } catch (e) {
@@ -67,10 +72,10 @@ while($true) {
     Start-Sleep -Milliseconds 300
 }
 `;
-    const scriptPath = path.join(app.getPath('temp'), 'desktop_monitor.ps1');
+    const scriptPath = path.join(app.getPath('userData'), 'desktop_monitor.ps1');
     fs.writeFileSync(scriptPath, psScript);
 
-    desktopMonitor = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { stdio: ['ignore', 'pipe', 'ignore'] });
+    desktopMonitor = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { stdio: ['ignore', 'pipe', 'ignore'], shell: true });
 
     desktopMonitor.stdout.on('data', (data) => {
         const output = data.toString().trim();
@@ -91,6 +96,8 @@ while($true) {
 function createWindow() {
     try {
         const settings = loadSettings();
+        // Fallback for legacy 'url' key
+        const trelloUrl = settings.trelloUrl || settings.url || null;
         const bounds = settings.bounds || { width: 1200, height: 600, x: 50, y: 100 };
         const alwaysOnTop = settings.alwaysOnTop !== undefined ? settings.alwaysOnTop : false;
 
@@ -101,7 +108,7 @@ function createWindow() {
             y: bounds.y,
             frame: false,
             transparent: true,
-            type: 'desktop', // This helps stick it to the wallpaper on Windows
+            type: alwaysOnTop ? 'normal' : 'desktop',
             alwaysOnTop: alwaysOnTop,
             skipTaskbar: true,
             backgroundColor: '#00000000',
@@ -117,7 +124,9 @@ function createWindow() {
 
         mainWindow.once('ready-to-show', () => {
             mainWindow.show();
-            startDesktopMonitor();
+            if (!alwaysOnTop) {
+                startDesktopMonitor();
+            }
         });
 
         mainWindow.on('resize', () => {
@@ -129,7 +138,10 @@ function createWindow() {
         });
 
         mainWindow.on('closed', () => {
-            if (desktopMonitor) desktopMonitor.kill();
+            if (desktopMonitor) {
+                desktopMonitor.kill();
+                desktopMonitor = null;
+            }
         });
 
     } catch (e) {
@@ -137,10 +149,22 @@ function createWindow() {
     }
 }
 
+function recreateWindow() {
+    if (mainWindow) {
+        mainWindow.close();
+    }
+    createWindow();
+}
+
 function createTray() {
     try {
-        const icon = nativeImage.createEmpty();
-        tray = new Tray(icon);
+        let iconPath = path.join(__dirname, 'assets', 'icon.png');
+        if (!fs.existsSync(iconPath)) {
+            iconPath = path.join(__dirname, 'assets', 'icon-256.png');
+        }
+
+        const icon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
+        tray = new Tray(icon.resize({ width: 16, height: 16 }));
 
         const contextMenu = Menu.buildFromTemplate([
             {
@@ -148,10 +172,10 @@ function createTray() {
                 type: 'radio',
                 checked: !loadSettings().alwaysOnTop,
                 click: () => {
-                    saveSettings({ alwaysOnTop: false });
-                    if (mainWindow) {
-                        mainWindow.setAlwaysOnTop(false);
-                        mainWindow.blur();
+                    const current = loadSettings().alwaysOnTop;
+                    if (current !== false) {
+                        saveSettings({ alwaysOnTop: false });
+                        recreateWindow();
                     }
                 }
             },
@@ -160,9 +184,10 @@ function createTray() {
                 type: 'radio',
                 checked: loadSettings().alwaysOnTop || false,
                 click: () => {
-                    saveSettings({ alwaysOnTop: true });
-                    if (mainWindow) {
-                        mainWindow.setAlwaysOnTop(true);
+                    const current = loadSettings().alwaysOnTop;
+                    if (current !== true) {
+                        saveSettings({ alwaysOnTop: true });
+                        recreateWindow();
                     }
                 }
             },
@@ -170,11 +195,18 @@ function createTray() {
                 label: 'Reset Workspace',
                 click: () => {
                     saveSettings({ trelloUrl: null });
-                    mainWindow.loadFile('index.html');
+                    if (mainWindow) {
+                        mainWindow.loadFile('index.html');
+                    }
                 }
             },
             { type: 'separator' },
-            { label: 'Quit', click: () => app.quit() }
+            {
+                label: 'Quit', click: () => {
+                    if (desktopMonitor) desktopMonitor.kill();
+                    app.quit();
+                }
+            }
         ]);
 
         tray.setToolTip('Sticky Trello Widget');
@@ -193,7 +225,7 @@ ipcMain.on('save-url', (event, url) => {
 ipcMain.handle('get-config', () => {
     const settings = loadSettings();
     return {
-        trelloUrl: settings.trelloUrl,
+        trelloUrl: settings.trelloUrl || settings.url || null,
         alwaysOnTop: settings.alwaysOnTop || false
     };
 });

@@ -7,7 +7,7 @@
     "license": "MIT",
     "scripts": {
         "start": "electron .",
-        "build": "electron-builder --win --config.win.signAndEditExecutable=false"
+        "build": "electron-builder --win"
     },
     "build": {
         "appId": "com.73rdwolf.sticky-trello-widget",

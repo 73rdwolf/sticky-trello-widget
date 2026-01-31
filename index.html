@@ -242,13 +242,26 @@
                     [class*="board-background"], [class*="BoardBackground"],
                     [class*="board-wrapper"], [class*="BoardWrapper"],
                     [data-testid="board-background"], [data-testid="board-wrapper"],
-                    [data-testid="board-content"], [data-testid="board"],
-                    div > div, section, article {
+                    [data-testid="board-content"], [data-testid="board"] {
                         background: transparent !important;
                         background-color: transparent !important;
                         background-image: none !important;
                     }
+
+                    /* Ensure lists and cards have some background so they are readable */
+                    .list-wrapper, .list, .list-card, [data-testid="list"], [data-testid="trello-card"] {
+                        background: rgba(25, 25, 25, 0.85) !important;
+                        backdrop-filter: blur(5px);
+                    }
                     
+                    /* EXEMPTIONS: Keep menus, popovers, and modals OPAQUE for readability */
+                    .pop-over, [data-testid*="popover"], .window-overlay, .window, 
+                    .dialog, .atlaskit-portal, [role="dialog"], [role="menu"] {
+                        background: #1d2125 !important; /* Trello dark theme background */
+                        opacity: 1 !important;
+                        backdrop-filter: none !important;
+                    }
+
                     /* Hide the top Atlassian header only */
                     #header, [data-testid="atlassian-navigation"], .atlassian-navigation {
                         display: none !important;
