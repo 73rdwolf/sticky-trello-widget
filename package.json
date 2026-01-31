@@ -3,11 +3,46 @@
     "version": "1.0.0",
     "description": "A sticky Trello widget for Windows",
     "main": "main.js",
+    "author": "Shovon Ahmed",
+    "license": "MIT",
     "scripts": {
-        "start": ".\\node_modules\\electron\\dist\\electron.exe ."
+        "start": "electron .",
+        "build": "electron-builder --win --config.win.signAndEditExecutable=false"
+    },
+    "build": {
+        "appId": "com.73rdwolf.sticky-trello-widget",
+        "productName": "Sticky Trello Widget",
+        "win": {
+            "target": [
+                {
+                    "target": "portable",
+                    "arch": [
+                        "x64"
+                    ]
+                }
+            ],
+            "icon": "assets/icon-256.png",
+            "signAndEditExecutable": false
+        },
+        "portable": {
+            "artifactName": "${productName}-Portable.exe"
+        },
+        "files": [
+            "main.js",
+            "preload.js",
+            "index.html",
+            "package.json",
+            "assets/**/*"
+        ],
+        "directories": {
+            "output": "dist"
+        }
     },
     "dependencies": {},
     "devDependencies": {
-        "electron": "^33.0.0"
+        "electron": "^33.0.0",
+        "electron-builder": "^25.0.0",
+        "png-to-ico": "^3.0.1",
+        "sharp": "^0.33.5"
     }
 }
