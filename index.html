@@ -233,68 +233,158 @@
             webview.src = url;
 
             webview.addEventListener('dom-ready', () => {
-                // CSS to remove board background
+                // CSS to remove ONLY the board background, preserving all UI elements
                 const css = `
-                    /* Remove background from ALL containers - nuclear approach */
-                    html, body, #trello-root, #surface, #board, #content,
-                    #chrome-container, main, .board-wrapper, .board-main-content,
-                    .board-canvas, .u-fancy-scrollbar, .board-content,
-                    [class*="board-background"], [class*="BoardBackground"],
-                    [class*="board-wrapper"], [class*="BoardWrapper"],
-                    [data-testid="board-background"], [data-testid="board-wrapper"],
-                    [data-testid="board-content"], [data-testid="board"],
-                    div > div, section, article {
+                    /* ============================================
+                       TARGETED BOARD BACKGROUND REMOVAL
+                       Only affects the main board background layer.
+                       Cards, modals, lists, and settings stay opaque.
+                       ============================================ */
+
+                    /* Main board background container - the customizable wallpaper area */
+                    [data-testid="board-background"],
+                    .board-background,
+                    #board-background,
+                    .board-wrapper > div:first-child,
+                    [class*="BoardBackground"],
+                    [class*="board-background"] {
                         background: transparent !important;
                         background-color: transparent !important;
                         background-image: none !important;
                     }
-                    
-                    /* Hide the top Atlassian header only */
-                    #header, [data-testid="atlassian-navigation"], .atlassian-navigation {
+
+                    /* Board canvas (where lists sit) */
+                    .board-canvas,
+                    [data-testid="board-canvas"],
+                    .board-main-content {
+                        background: transparent !important;
+                        background-color: transparent !important;
+                        background-image: none !important;
+                    }
+
+                    /* Top-level containers that hold the background */
+                    #trello-root,
+                    #surface,
+                    #content,
+                    #chrome-container,
+                    body,
+                    html {
+                        background: transparent !important;
+                        background-color: transparent !important;
+                    }
+
+                    /* Hide the Atlassian header */
+                    #header,
+                    [data-testid="atlassian-navigation"],
+                    .atlassian-navigation,
+                    nav[aria-label="Atlassian Navigation"] {
                         display: none !important;
+                    }
+
+                    /* ============================================
+                       PRESERVE THESE UI ELEMENTS (Keep opaque)
+                       ============================================ */
+
+                    /* Card modals and dialogs - KEEP THEIR BACKGROUNDS */
+                    .window-overlay,
+                    .window-module,
+                    .card-detail-window,
+                    [data-testid="card-back"],
+                    [data-testid="card-detail"],
+                    .pop-over,
+                    .dialog,
+                    .modal,
+                    [role="dialog"],
+                    [role="alertdialog"] {
+                        /* Do NOT set transparent here - let Trello's styles apply */
+                    }
+
+                    /* Lists and cards */
+                    .list-wrapper,
+                    .list-card,
+                    .list-header,
+                    [data-testid="list"],
+                    [data-testid="list-wrapper"],
+                    [data-testid="card"] {
+                        /* Do NOT set transparent - keep Trello's styling */
+                    }
+
+                    /* Buttons, inputs, and other controls */
+                    button, input, select, textarea, .button, .btn {
+                        /* Preserve default styling */
                     }
                 `;
                 webview.insertCSS(css);
 
-                // JavaScript to remove inline background styles
+                // JavaScript to remove ONLY the board background inline styles
                 webview.executeJavaScript(`
-                    function removeBackgrounds() {
-                        // Get all elements
-                        const allElements = document.querySelectorAll('*');
-                        allElements.forEach(el => {
+                    function removeBoardBackground() {
+                        // Target ONLY board background elements
+                        const boardBackgroundSelectors = [
+                            '[data-testid="board-background"]',
+                            '.board-background',
+                            '#board-background',
+                            '[class*="BoardBackground"]',
+                            '[class*="board-background"]'
+                        ];
+
+                        boardBackgroundSelectors.forEach(selector => {
+                            document.querySelectorAll(selector).forEach(el => {
+                                el.style.setProperty('background', 'transparent', 'important');
+                                el.style.setProperty('background-color', 'transparent', 'important');
+                                el.style.setProperty('background-image', 'none', 'important');
+                            });
+                        });
+
+                        // Also check for elements with background-image set inline (board photos)
+                        const main = document.querySelector('#trello-root') || document.body;
+                        const allDivs = main.querySelectorAll('div');
+                        allDivs.forEach(el => {
                             const style = el.style;
-                            const computed = window.getComputedStyle(el);
-                            
-                            // Skip list and card elements
-                            const classes = el.className || '';
-                            if (typeof classes === 'string' && 
-                                (classes.includes('list-card') || 
-                                 classes.includes('list-wrapper') ||
-                                 classes.includes('list-header'))) {
-                                return;
-                            }
-                            
-                            // Remove background if it looks like a board background
-                            if (style.backgroundColor || style.backgroundImage) {
-                                // Check if it's a container-like element
-                                const tag = el.tagName.toLowerCase();
-                                if (['div', 'main', 'section', 'article', 'body', 'html'].includes(tag)) {
-                                    style.setProperty('background', 'transparent', 'important');
-                                    style.setProperty('background-color', 'transparent', 'important');
-                                    style.setProperty('background-image', 'none', 'important');
-                                }
+                            const className = el.className || '';
+                            const testId = el.getAttribute('data-testid') || '';
+
+                            // Check if this is likely a board background element
+                            const isBoardBg = (
+                                testId.includes('board-background') ||
+                                testId.includes('board-wrapper') ||
+                                className.includes('board-background') ||
+                                className.includes('BoardBackground')
+                            );
+
+                            // Skip if it's a card, list, modal, or other UI element
+                            const isUIElement = (
+                                className.includes('card') ||
+                                className.includes('list') ||
+                                className.includes('modal') ||
+                                className.includes('dialog') ||
+                                className.includes('pop-over') ||
+                                className.includes('window') ||
+                                testId.includes('card') ||
+                                testId.includes('list') ||
+                                el.closest('[role="dialog"]') ||
+                                el.closest('.pop-over')
+                            );
+
+                            if (isBoardBg && !isUIElement) {
+                                style.setProperty('background', 'transparent', 'important');
+                                style.setProperty('background-color', 'transparent', 'important');
+                                style.setProperty('background-image', 'none', 'important');
                             }
                         });
                     }
-                    
-                    // Run immediately and after a delay (for dynamic content)
-                    removeBackgrounds();
-                    setTimeout(removeBackgrounds, 1000);
-                    setTimeout(removeBackgrounds, 3000);
-                    
-                    // Also observe for changes
-                    const observer = new MutationObserver(removeBackgrounds);
-                    observer.observe(document.body, { childList: true, subtree: true });
+
+                    // Run multiple times to catch dynamic loads
+                    removeBoardBackground();
+                    setTimeout(removeBoardBackground, 500);
+                    setTimeout(removeBoardBackground, 1500);
+                    setTimeout(removeBoardBackground, 3000);
+
+                    // Observe for dynamic changes
+                    const observer = new MutationObserver(() => {
+                        removeBoardBackground();
+                    });
+                    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
                 `);
             });
 
