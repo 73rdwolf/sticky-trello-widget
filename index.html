@@ -281,19 +281,30 @@
                         allElements.forEach(el => {
                             const style = el.style;
                             
-                            // Skip list and card elements
+                            // Skip list, card elements, and BOTTOM NAVIGATION BAR
                             const classes = el.className || '';
                             const dataTestId = el.getAttribute('data-testid') || '';
-                            if (typeof classes === 'string' && 
-                                (classes.includes('list-card') || 
-                                 classes.includes('list-wrapper') ||
-                                 classes.includes('list-header') ||
-                                 dataTestId.includes('list') ||
-                                 dataTestId.includes('card'))) {
+                            const elId = el.id || '';
+                            const classStr = typeof classes === 'string' ? classes.toLowerCase() : '';
+                            const testIdStr = typeof dataTestId === 'string' ? dataTestId.toLowerCase() : '';
+                            const idStr = typeof elId === 'string' ? elId.toLowerCase() : '';
+
+                            if (classStr.includes('list-card') || 
+                                classStr.includes('list-wrapper') ||
+                                classStr.includes('list-header') ||
+                                classStr.includes('nav') || 
+                                classStr.includes('view') ||
+                                classStr.includes('switcher') ||
+                                testIdStr.includes('list') ||
+                                testIdStr.includes('card') ||
+                                testIdStr.includes('nav') ||
+                                testIdStr.includes('view') ||
+                                idStr.includes('nav') ||
+                                idStr.includes('view')) {
                                 return;
                             }
                             
-                            // Aggressively remove backgrounds from larger containers
+                            // Aggressively remove backgrounds from larger layout containers ONLY
                             const tag = el.tagName.toLowerCase();
                             if (['div', 'main', 'section', 'article', 'body', 'html'].includes(tag)) {
                                 el.style.setProperty('background', 'transparent', 'important');

@@ -54,40 +54,87 @@ Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
-public class FG {
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll", CharSet=CharSet.Auto)]
-    public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+public class User32 {
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll", CharSet=CharSet.Auto)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+    [DllImport("user32.dll")] public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+    [DllImport("user32.dll")] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+    [DllImport("user32.dll")] public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string lpszWindow);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
 }
 "@
-while($true) {
-    $fg = [FG]::GetForegroundWindow()
-    $sb = New-Object System.Text.StringBuilder 256
-    [FG]::GetClassName($fg, $sb, 256)
-    $cls = $sb.ToString()
-    if ($cls -eq "WorkerW" -or $cls -eq "Progman" -or $cls -eq "SysListView32") {
-        Write-Output "DESKTOP"
+
+function Get-DesktopWorker {
+    $progman = [User32]::FindWindow("Progman", $null)
+    $res = [IntPtr]::Zero
+    [User32]::SendMessageTimeout($progman, 0x052C, [IntPtr]::Zero, [IntPtr]::Zero, 0, 1000, [out]$res) | Out-Null
+    
+    $workerW = [IntPtr]::Zero
+    $shellView = [IntPtr]::Zero
+    
+    # We need to find the WorkerW window that is behind the desktop icons
+    # It is usually created after sending the 0x052C message
+    $workerW = [User32]::FindWindowEx([IntPtr]::Zero, [IntPtr]::Zero, "WorkerW", $null)
+    while ($workerW -ne [IntPtr]::Zero) {
+        $shellView = [User32]::FindWindowEx($workerW, [IntPtr]::Zero, "SHELLDLL_DefView", $null)
+        if ($shellView -ne [IntPtr]::Zero) {
+            # This is the icons worker. The one *immediately after* is the background worker.
+            $backgroundWorker = [User32]::FindWindowEx([IntPtr]::Zero, $workerW, "WorkerW", $null)
+            if ($backgroundWorker -ne [IntPtr]::Zero) { return $backgroundWorker }
+        }
+        $workerW = [User32]::FindWindowEx([IntPtr]::Zero, $workerW, "WorkerW", $null)
     }
-    Start-Sleep -Milliseconds 300
+    return $progman
+}
+
+if ($args[0] -eq "anchor") {
+    $myHwnd = [User32]::FindWindow($null, "Sticky Trello Widget")
+    if ($myHwnd -ne [IntPtr]::Zero) {
+        $desktop = Get-DesktopWorker
+        [User32]::SetParent($myHwnd, $desktop)
+    }
+    exit
+}
+
+while ($true) {
+    try {
+        $hwnd = [User32]::GetForegroundWindow()
+        $sb = New-Object System.Text.StringBuilder 256
+        [User32]::GetClassName($hwnd, $sb, 256) | Out-Null
+        $cls = $sb.ToString()
+        if ($cls -eq "WorkerW" -or $cls -eq "Progman" -or $cls -eq "SysListView32") {
+            Write-Output "DESKTOP"
+        }
+    } catch {}
+    Start-Sleep -Milliseconds 1000
 }
 `;
     const scriptPath = path.join(app.getPath('userData'), 'desktop_monitor.ps1');
     fs.writeFileSync(scriptPath, psScript);
+
+    // Initial anchor call
+    spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, 'anchor'], { shell: true });
 
     desktopMonitor = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath], { stdio: ['ignore', 'pipe', 'ignore'], shell: true });
 
     desktopMonitor.stdout.on('data', (data) => {
         const output = data.toString().trim();
         if (output === 'DESKTOP' && mainWindow) {
-            if (mainWindow.isMinimized() || !mainWindow.isVisible()) {
-                mainWindow.restore();
-                mainWindow.show();
-                // Removed moveTop() to prevent window from overlaying other apps
-                // We want it to stay stuck behind other windows.
-                if (!mainWindow.isAlwaysOnTop()) {
-                    setTimeout(() => mainWindow.blur(), 50);
+            // Re-anchor if in widget mode
+            if (!loadSettings().alwaysOnTop) {
+                // Re-trigger anchoring via PS
+                spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, 'anchor'], { shell: true });
+
+                // Forcibly restore and show without stealing focus
+                if (mainWindow.isMinimized()) {
+                    mainWindow.restore();
                 }
+                mainWindow.showInactive();
+
+                // Ensure it's at the bottom of the stack
+                setTimeout(() => {
+                    if (mainWindow) mainWindow.blur();
+                }, 100);
             }
         }
     });
@@ -102,13 +149,14 @@ function createWindow() {
         const alwaysOnTop = settings.alwaysOnTop !== undefined ? settings.alwaysOnTop : false;
 
         mainWindow = new BrowserWindow({
+            title: 'Sticky Trello Widget',
             width: bounds.width,
             height: bounds.height,
             x: bounds.x,
             y: bounds.y,
             frame: false,
             transparent: true,
-            type: alwaysOnTop ? 'normal' : 'desktop',
+            type: alwaysOnTop ? 'normal' : 'toolbar',
             alwaysOnTop: alwaysOnTop,
             skipTaskbar: true,
             backgroundColor: '#00000000',
@@ -135,6 +183,16 @@ function createWindow() {
 
         mainWindow.on('move', () => {
             saveSettings({ bounds: mainWindow.getBounds() });
+        });
+
+        // Prevent minimization in Widget Mode (Win+D handling)
+        mainWindow.on('minimize', (event) => {
+            const settings = loadSettings();
+            if (!settings.alwaysOnTop) {
+                event.preventDefault();
+                mainWindow.restore();
+                mainWindow.showInactive();
+            }
         });
 
         mainWindow.on('closed', () => {
