@@ -61,24 +61,25 @@ public class User32 {
     [DllImport("user32.dll")] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
     [DllImport("user32.dll")] public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string lpszWindow);
     [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+    [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 }
 "@
 
 function Get-DesktopWorker {
     $progman = [User32]::FindWindow("Progman", $null)
     $res = [IntPtr]::Zero
+    # Create the background layer (0x052C message)
     [User32]::SendMessageTimeout($progman, 0x052C, [IntPtr]::Zero, [IntPtr]::Zero, 0, 1000, [out]$res) | Out-Null
     
     $workerW = [IntPtr]::Zero
-    $shellView = [IntPtr]::Zero
-    
-    # We need to find the WorkerW window that is behind the desktop icons
-    # It is usually created after sending the 0x052C message
+    # Find the WorkerW window that is parented to nothing and follows shellview
     $workerW = [User32]::FindWindowEx([IntPtr]::Zero, [IntPtr]::Zero, "WorkerW", $null)
     while ($workerW -ne [IntPtr]::Zero) {
         $shellView = [User32]::FindWindowEx($workerW, [IntPtr]::Zero, "SHELLDLL_DefView", $null)
         if ($shellView -ne [IntPtr]::Zero) {
-            # This is the icons worker. The one *immediately after* is the background worker.
+            # Find the WorkerW directly AFTER this one
             $backgroundWorker = [User32]::FindWindowEx([IntPtr]::Zero, $workerW, "WorkerW", $null)
             if ($backgroundWorker -ne [IntPtr]::Zero) { return $backgroundWorker }
         }
@@ -91,23 +92,31 @@ if ($args[0] -eq "anchor") {
     $myHwnd = [User32]::FindWindow($null, "Sticky Trello Widget")
     if ($myHwnd -ne [IntPtr]::Zero) {
         $desktop = Get-DesktopWorker
-        [User32]::SetParent($myHwnd, $desktop)
+        
+        # 1. Update window styles to be a true CHIlD of desktop
+        $GWL_STYLE = -16
+        $GWL_EXSTYLE = -20
+        $WS_CHILD = 0x40000000
+        $WS_CLIPSIBLINGS = 0x04000000
+        $WS_EX_TOOLWINDOW = 0x00000080
+        $WS_EX_NOACTIVATE = 0x08000000
+        
+        $style = [User32]::GetWindowLong($myHwnd, $GWL_STYLE)
+        [User32]::SetWindowLong($myHwnd, $GWL_STYLE, ($style -bor $WS_CHILD -bor $WS_CLIPSIBLINGS)) | Out-Null
+        
+        $exStyle = [User32]::GetWindowLong($myHwnd, $GWL_EXSTYLE)
+        [User32]::SetWindowLong($myHwnd, $GWL_EXSTYLE, ($exStyle -bor $WS_EX_TOOLWINDOW -bor $WS_EX_NOACTIVATE)) | Out-Null
+        
+        # 2. Re-parent
+        [User32]::SetParent($myHwnd, $desktop) | Out-Null
+        
+        # 3. Force update position and Z-order
+        [User32]::SetWindowPos($myHwnd, [IntPtr]1, 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0040) | Out-Null
     }
     exit
 }
-
-while ($true) {
-    try {
-        $hwnd = [User32]::GetForegroundWindow()
-        $sb = New-Object System.Text.StringBuilder 256
-        [User32]::GetClassName($hwnd, $sb, 256) | Out-Null
-        $cls = $sb.ToString()
-        if ($cls -eq "WorkerW" -or $cls -eq "Progman" -or $cls -eq "SysListView32") {
-            Write-Output "DESKTOP"
-        }
-    } catch {}
-    Start-Sleep -Milliseconds 1000
-}
+# Silent monitor loop
+while ($true) { Start-Sleep -Seconds 10 }
 `;
     const scriptPath = path.join(app.getPath('userData'), 'desktop_monitor.ps1');
     fs.writeFileSync(scriptPath, psScript);
@@ -140,6 +149,27 @@ while ($true) {
     });
 }
 
+function anchorWindow() {
+    if (!mainWindow) return;
+    const scriptPath = path.join(app.getPath('userData'), 'desktop_monitor.ps1');
+    spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', scriptPath, 'anchor'], { shell: true });
+}
+
+function startHeartbeat() {
+    setInterval(() => {
+        if (!mainWindow) return;
+        const settings = loadSettings();
+        if (!settings.alwaysOnTop) {
+            // Check if window is minimized or hidden
+            if (mainWindow.isMinimized() || !mainWindow.isVisible()) {
+                mainWindow.restore();
+                mainWindow.showInactive();
+                anchorWindow();
+            }
+        }
+    }, 1000);
+}
+
 function createWindow() {
     try {
         const settings = loadSettings();
@@ -156,10 +186,12 @@ function createWindow() {
             y: bounds.y,
             frame: false,
             transparent: true,
-            type: alwaysOnTop ? 'normal' : 'toolbar',
+            type: alwaysOnTop ? 'normal' : 'toolbar', // 'desktop' type conflicts with manual SetParent
             alwaysOnTop: alwaysOnTop,
             skipTaskbar: true,
             backgroundColor: '#00000000',
+            hasShadow: false,
+            focusable: true, // Allow interaction but keep as tool window
             webPreferences: {
                 preload: path.join(__dirname, 'preload.js'),
                 contextIsolation: true,
@@ -174,6 +206,7 @@ function createWindow() {
             mainWindow.show();
             if (!alwaysOnTop) {
                 startDesktopMonitor();
+                startHeartbeat();
             }
         });
 
@@ -192,6 +225,8 @@ function createWindow() {
                 event.preventDefault();
                 mainWindow.restore();
                 mainWindow.showInactive();
+                // Re-anchor to the desktop
+                anchorWindow();
             }
         });
 
