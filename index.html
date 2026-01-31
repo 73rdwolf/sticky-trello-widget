@@ -243,7 +243,8 @@
                     [class*="board-background"], [class*="BoardBackground"],
                     [class*="board-wrapper"], [class*="BoardWrapper"],
                     [data-testid="board-background"], [data-testid="board-wrapper"],
-                    [data-testid="board-content"], [data-testid="board"] {
+                    [data-testid="board-content"], [data-testid="board"],
+                    [class*="surface"], [class*="canvas"], [class*="content-wrapper"] {
                         background: transparent !important;
                         background-color: transparent !important;
                         background-image: none !important;
@@ -273,30 +274,28 @@
                 // JavaScript to remove inline background styles
                 webview.executeJavaScript(`
                     function removeBackgrounds() {
-                        // Get all elements
                         const allElements = document.querySelectorAll('*');
                         allElements.forEach(el => {
                             const style = el.style;
-                            const computed = window.getComputedStyle(el);
                             
                             // Skip list and card elements
                             const classes = el.className || '';
+                            const dataTestId = el.getAttribute('data-testid') || '';
                             if (typeof classes === 'string' && 
                                 (classes.includes('list-card') || 
                                  classes.includes('list-wrapper') ||
-                                 classes.includes('list-header'))) {
+                                 classes.includes('list-header') ||
+                                 dataTestId.includes('list') ||
+                                 dataTestId.includes('card'))) {
                                 return;
                             }
                             
-                            // Remove background if it looks like a board background
-                            if (style.backgroundColor || style.backgroundImage) {
-                                // Check if it's a container-like element
-                                const tag = el.tagName.toLowerCase();
-                                if (['div', 'main', 'section', 'article', 'body', 'html'].includes(tag)) {
-                                    style.setProperty('background', 'transparent', 'important');
-                                    style.setProperty('background-color', 'transparent', 'important');
-                                    style.setProperty('background-image', 'none', 'important');
-                                }
+                            // Aggressively remove backgrounds from larger containers
+                            const tag = el.tagName.toLowerCase();
+                            if (['div', 'main', 'section', 'article', 'body', 'html'].includes(tag)) {
+                                el.style.setProperty('background', 'transparent', 'important');
+                                el.style.setProperty('background-color', 'transparent', 'important');
+                                el.style.setProperty('background-image', 'none', 'important');
                             }
                         });
                     }
