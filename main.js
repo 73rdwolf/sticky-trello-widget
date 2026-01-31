@@ -78,8 +78,8 @@ while($true) {
             if (mainWindow.isMinimized() || !mainWindow.isVisible()) {
                 mainWindow.restore();
                 mainWindow.show();
-                mainWindow.moveTop(); // Move to top of z-order
-                // Then push back down if not always on top
+                // Removed moveTop() to prevent window from overlaying other apps
+                // We want it to stay stuck behind other windows.
                 if (!mainWindow.isAlwaysOnTop()) {
                     setTimeout(() => mainWindow.blur(), 50);
                 }
@@ -101,6 +101,7 @@ function createWindow() {
             y: bounds.y,
             frame: false,
             transparent: true,
+            type: 'desktop', // This helps stick it to the wallpaper on Windows
             alwaysOnTop: alwaysOnTop,
             skipTaskbar: true,
             backgroundColor: '#00000000',
@@ -143,14 +144,25 @@ function createTray() {
 
         const contextMenu = Menu.buildFromTemplate([
             {
-                label: 'Overlay Mode (Always on Top)',
-                type: 'checkbox',
-                checked: loadSettings().alwaysOnTop || false,
-                click: (item) => {
-                    const newValue = item.checked;
-                    saveSettings({ alwaysOnTop: newValue });
+                label: 'Stick to Wallpaper (Widget Mode)',
+                type: 'radio',
+                checked: !loadSettings().alwaysOnTop,
+                click: () => {
+                    saveSettings({ alwaysOnTop: false });
                     if (mainWindow) {
-                        mainWindow.setAlwaysOnTop(newValue);
+                        mainWindow.setAlwaysOnTop(false);
+                        mainWindow.blur();
+                    }
+                }
+            },
+            {
+                label: 'Float Above (Overlay Mode)',
+                type: 'radio',
+                checked: loadSettings().alwaysOnTop || false,
+                click: () => {
+                    saveSettings({ alwaysOnTop: true });
+                    if (mainWindow) {
+                        mainWindow.setAlwaysOnTop(true);
                     }
                 }
             },
