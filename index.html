@@ -257,7 +257,9 @@
                     
                     /* EXEMPTIONS: Keep menus, popovers, and modals OPAQUE for readability */
                     .pop-over, [data-testid*="popover"], .window-overlay, .window, 
-                    .dialog, .atlaskit-portal, [role="dialog"], [role="menu"] {
+                    .dialog, .atlaskit-portal, [role="dialog"], [role="menu"],
+                    .board-views-navigation, [class*="board-views-navigation"],
+                    [data-testid*="navigation-nav"], [data-testid*="board-views"] {
                         background: #1d2125 !important; /* Trello dark theme background */
                         opacity: 1 !important;
                         backdrop-filter: none !important;
